@@ -45,6 +45,17 @@ test('refusal text yields the window, not the output cap it also names', () => {
     extractCapacityLimits('Input validation error: `inputs` tokens + `max_new_tokens` must be <= 32768'),
     { contextWindow: 32768 },
   )
+  // The sum is matched as a whole expression, so irregular spacing cannot make
+  // its operand double as an output cap (a fixed-width lookbehind could not).
+  assert.deepEqual(
+    extractCapacityLimits('Input validation error: inputs tokens +  max_new_tokens must be <= 32768'),
+    { contextWindow: 32768 },
+  )
+  // ...and the sum form is recognised for max_tokens too, not only max_new_tokens.
+  assert.deepEqual(
+    extractCapacityLimits('input tokens + max_tokens must be <= 32768'),
+    { contextWindow: 32768 },
+  )
   // An output-cap "must be <=" must never also become a context window.
   assert.deepEqual(extractCapacityLimits('max_tokens must be <= 32768'), { maxTokens: 32768 })
   // A BARE max_new_tokens is still an output cap.
