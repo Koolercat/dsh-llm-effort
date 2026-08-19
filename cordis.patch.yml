@@ -1,0 +1,5 @@
+# dsh-llm-effort bundle patch. It adds one host plugin row; the same package's
+# `dsh.client` declaration mounts the browser settings section.
+- insert:
+    - id: llm-effort
+      name: 'dsh-llm-effort'
