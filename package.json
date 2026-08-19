@@ -1,7 +1,7 @@
 {
   "name": "dsh-llm-effort",
-  "description": "DeepSeek Harness plugin: generic low/medium/high/xhigh/max reasoning efforts for dsh third-party (pi-ai) LLM routes, with per-model disable controls",
-  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin: generic low/medium/high/xhigh/max reasoning efforts for dsh third-party (pi-ai) LLM routes, with per-model disable controls and probeable per-model context windows",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -14,10 +14,15 @@
       "types": "./lib/types/client.d.ts",
       "default": "./lib/client.js"
     },
+    "./context": {
+      "types": "./lib/types/context.d.ts",
+      "default": "./lib/context.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/context.js",
     "lib/client.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
