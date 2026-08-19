@@ -23,6 +23,8 @@ export type ProbeOutcome =
   | 'unsupported'
   | 'refused'
   | 'unreadable'
+  | 'aborted'
+  | 'truncated'
 
 /** Capacities one listing row or one refusal disclosed. */
 export interface ProbedCapacities {

@@ -50,7 +50,7 @@ export declare function probeCredentials(request: { baseURL?: string; apiKey?: s
 export declare function createProbeDiscovery(
   getAdapter: (provider: string) => object | undefined,
   options?: { getConfig?: () => unknown; fetchImpl?: typeof fetch },
-): (request: { provider?: string; api?: string; baseURL?: string }) => Promise<Array<{
+): (request: { provider?: string; api?: string; baseURL?: string; apiKey?: string; signal?: AbortSignal }) => Promise<Array<{
   id: string
   name: string
   contextWindow?: number

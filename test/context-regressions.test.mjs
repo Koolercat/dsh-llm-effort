@@ -138,3 +138,103 @@ test('prepare A then live settings B: prepared stream still uses A for capacity'
   restoreRuntime()
   restore()
 })
+
+
+test('body-read cancellation settles as aborted, not unreadable', async () => {
+  const controller = new AbortController()
+  let pulls = 0
+  const fetchImpl = async () => {
+    const stream = new ReadableStream({
+      pull(controllerStream) {
+        pulls += 1
+        if (pulls === 1) {
+          controllerStream.enqueue(new TextEncoder().encode('{"data":['))
+          controller.abort()
+          return
+        }
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        controllerStream.error(error)
+      },
+    })
+    return new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  const result = await probeListing({ baseUrl: 'https://x/v1', fetchImpl, signal: controller.signal })
+  assert.equal(result.outcome, 'aborted')
+})
+
+test('a truncated listing surfaces its diagnostic instead of silent unreadable rows', async () => {
+  // Build a body larger than MAX_PROBE_LISTING_BYTES without relying on
+  // pathological JSON repetition counts that Node may flatten.
+  const oversized = 'x'.repeat(4 * 1024 * 1024 + 1)
+  assert.ok(oversized.length > 4 * 1024 * 1024)
+  const fetchImpl = async () => new Response(oversized, { status: 200 })
+  const result = await probeListing({ baseUrl: 'https://x/v1', fetchImpl })
+  assert.equal(result.outcome, 'truncated')
+  assert.match(result.message ?? '', /exceeded/)
+
+  const discover = createProbeDiscovery(() => ({
+    current: () => ({ models: { getModels: () => [{ id: 'm1', api: 'openai-completions', baseUrl: 'https://x/v1', contextWindow: 1, maxTokens: 1 }] } }),
+    config: { profiles: () => new Map([['acme', {}]]), resolveApiKey: async () => undefined },
+  }), { getConfig: () => ({}), fetchImpl })
+  await assert.rejects(discover({ provider: 'acme', api: 'listing' }), /exceeded/)
+})
+
+test('interleaved prepared streams keep their own capacity snapshots', async () => {
+  let liveConfig = { providers: {} }
+  const restore = patchPiAiAdapter(() => liveConfig)
+  const { Context } = await import('@deepseek-ai/cordis')
+  const { LlmRuntime } = await import('@deepseek-ai/dsh-llm')
+  const { PiAiAdapter } = await import('@deepseek-ai/dsh-llm-pi-ai')
+
+  const baseModel = {
+    provider: 'openai', id: 'gpt-5', name: 'GPT 5', reasoning: false,
+    input: ['text'], contextWindow: 262144, maxTokens: 16384,
+  }
+  const snapshot = {
+    profiles: new Map([['openai', { defaultContextWindow: 262144, configuredMaxTokens: new Map(), reasoning: undefined }]]),
+    models: { getModel() { return baseModel }, getModels() { return [baseModel] } },
+  }
+  const dispatched = []
+  const adapter = Object.create(PiAiAdapter.prototype)
+  adapter.config = { profiles: () => snapshot.profiles, resolveApiKey: async () => undefined }
+  adapter.current = () => snapshot
+  adapter.profileOf = () => snapshot.profiles.get('openai')
+  adapter.providerInfo = (provider) => ({ id: provider, name: provider })
+  adapter.providerRetryPolicy = () => undefined
+  adapter.listModels = async () => [{ provider: 'openai', id: 'gpt-5', name: 'GPT 5', inputModalities: ['text'] }]
+  adapter.resolveModel = async function (provider, model) {
+    const descriptor = this.modelOf(snapshot, provider, model)
+    return { provider, id: model, name: model, inputModalities: ['text'], context: { contextWindow: descriptor.contextWindow } }
+  }
+  adapter.stream = async function* (options) {
+    const descriptor = this.modelOf(snapshot, options.provider, options.model)
+    yield { type: 'text-delta', index: 0, delta: 'x' }
+    await Promise.resolve()
+    dispatched.push(this.modelOf(snapshot, options.provider, options.model).contextWindow)
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+
+  const root = new Context()
+  const runtime = new LlmRuntime(root)
+  runtime.registerAdapter(['openai'], adapter)
+  const restoreRuntime = patchLlmRuntime(runtime, () => liveConfig)
+
+  const preparedA = await runtime.prepareCall({ provider: 'openai', model: 'gpt-5' })
+  liveConfig = { providers: { openai: { models: { 'gpt-5': { contextWindow: 1000000 } } } } }
+  const preparedB = await runtime.prepareCall({ provider: 'openai', model: 'gpt-5' })
+  assert.equal(preparedA.context.contextWindow, 262144)
+  assert.equal(preparedB.context.contextWindow, 1000000)
+
+  const iterA = preparedA.stream({ provider: 'openai', model: 'gpt-5', messages: [] })[Symbol.asyncIterator]()
+  const iterB = preparedB.stream({ provider: 'openai', model: 'gpt-5', messages: [] })[Symbol.asyncIterator]()
+  await iterA.next()
+  await iterB.next()
+  await iterA.next()
+  await iterB.next()
+  await iterA.next()
+  await iterB.next()
+  assert.deepEqual(dispatched, [262144, 1000000])
+
+  restoreRuntime(); restore()
+})

@@ -78,8 +78,8 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
   `contextWindow`）。base 以
   `/v1` 结尾时还会顺带问一次 LM Studio 的 `/api/v0/models`。
 - **探测报错**（近乎免费，一次被拒绝的 POST）：发一条 4 token 的消息，配上
-  `max_tokens: 999999999`。端点在**生成之前**就会拒绝，而拒绝信息里通常直接带真实
-  数字：
+  `max_tokens: 999999999`。多数端点会在**生成之前**拒绝，拒绝信息里通常直接带真实数字；
+  但有些端点会接受或自动截断请求，此时仍可能产生请求费或少量输出：
 
   ```text
   This model's maximum context length is 131072 tokens. However, you requested ...
@@ -89,7 +89,8 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
   解析器会把"输出上限"和"上下文窗口"分开（`supports at most 128000 completion
   tokens` 说的是前者，误读会把窗口低估一个数量级）。支持
   `openai-completions` / `openai-responses` / `anthropic-messages`。若端点反而
-  接受了这个无穷输出上限，请求会被**立即 abort**并报告"未能判定"，绝不会放任它生成。
+  接受了这个无穷输出上限，客户端会**立即 abort**并报告"未能判定"；这不保证服务端已停止，
+  也不保证未产生费用。
 
 探测走的是插件自己注册的 model-discovery 命名空间（`llm-effort`），
 `llm.discoverModels` 没有 model 字段，所以本命名空间约定用 `api` 字段承载指令：
@@ -187,7 +188,7 @@ llm-effort:
 ## 测试
 
 ```bash
-npm ci && npm test                 # 回归测试（当前 53 个）
+npm ci && npm test                 # 回归测试（当前 56 个）
 npm run test:install               # 真实 dsh web 安装/启动/RPC 测试（随机端口 + 实例身份校验）
 npm run test:browser               # 用系统 Chrome/Chromium 打开 Effort 设置页并挂载模型行
 ```
