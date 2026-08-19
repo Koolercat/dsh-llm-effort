@@ -1,0 +1,140 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { Context } from '@deepseek-ai/cordis'
+import { LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { probeByRefusal, probeListing } from '../lib/context.js'
+import {
+  createProbeDiscovery,
+  decorateModel,
+  patchLlmRuntime,
+  patchPiAiAdapter,
+  probeCredentials,
+} from '../lib/index.js'
+
+test('a stored API key never leaves the configured baseUrl', async () => {
+  assert.deepEqual(probeCredentials({ baseURL: 'https://evil.example', apiKey: 'oneshot' }, 'https://good.example/v1'), {
+    baseUrl: 'https://evil.example',
+    apiKey: 'oneshot',
+  })
+  assert.deepEqual(probeCredentials({ baseURL: 'https://evil.example' }, 'https://good.example/v1'), {
+    baseUrl: 'https://evil.example',
+    apiKey: undefined,
+  })
+  assert.deepEqual(probeCredentials({}, 'https://good.example/v1', 'stored'), {
+    baseUrl: 'https://good.example/v1',
+    apiKey: 'stored',
+  })
+
+  const seen = []
+  const adapter = {
+    current: () => ({ models: { getModels: () => [{ id: 'm1', api: 'openai-completions', baseUrl: 'https://good.example/v1', contextWindow: 262144, maxTokens: 32768 }] } }),
+    config: {
+      profiles: () => new Map([['acme', { defaultContextWindow: 262144 }]]),
+      resolveApiKey: async () => {
+        seen.push('stored-key-resolved')
+        return 'STORED_SECRET'
+      },
+    },
+  }
+  const discover = createProbeDiscovery(() => adapter, {
+    getConfig: () => ({}),
+    fetchImpl: async (url, init) => {
+      seen.push({ url, auth: init.headers.authorization ?? init.headers['x-api-key'] ?? null })
+      return new Response(JSON.stringify({ data: [{ id: 'm1', context_length: 131072 }] }), { status: 200 })
+    },
+  })
+  // Caller-supplied baseURL without a one-shot key: no stored credential leaves.
+  await discover({ provider: 'acme', api: 'listing', baseURL: 'https://evil.example/v1' })
+  assert.deepEqual(seen, [{ url: 'https://evil.example/v1/models', auth: null }])
+})
+
+test('caller cancellation settles as aborted, not unreachable', async () => {
+  const controller = new AbortController()
+  const fetchImpl = async (_url, init) => {
+    return await new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => {
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        reject(error)
+      })
+      controller.abort()
+    })
+  }
+  const result = await probeByRefusal({ api: 'openai-completions', baseUrl: 'https://x/v1', model: 'm' }, { fetchImpl, signal: controller.signal })
+  assert.equal(result.outcome, 'aborted')
+})
+
+test('a successful capacity-less listing survives a sibling 404', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/api/v0/models')) return new Response('nope', { status: 404 })
+    return new Response(JSON.stringify({ data: [{ id: 'm1' }] }), { status: 200 })
+  }
+  const result = await probeListing({ baseUrl: 'http://localhost:1234/v1', fetchImpl })
+  assert.deepEqual(result, { outcome: 'listing', models: [{ id: 'm1' }] })
+})
+
+test('prepare A then live settings B: prepared stream still uses A for capacity', async () => {
+  let liveConfig = { providers: {} }
+  const restore = patchPiAiAdapter(() => liveConfig)
+
+  const baseModel = {
+    provider: 'openai',
+    id: 'gpt-5',
+    name: 'GPT 5',
+    reasoning: false,
+    input: ['text'],
+    contextWindow: 262144,
+    maxTokens: 16384,
+  }
+  const snapshot = {
+    profiles: new Map([['openai', { defaultContextWindow: 262144, configuredMaxTokens: new Map(), reasoning: undefined }]]),
+    models: {
+      getModel() { return baseModel },
+      getModels() { return [baseModel] },
+    },
+  }
+  const dispatched = []
+  const adapter = Object.create(PiAiAdapter.prototype)
+  adapter.config = { profiles: () => snapshot.profiles, resolveApiKey: async () => undefined }
+  adapter.current = () => snapshot
+  adapter.profileOf = () => snapshot.profiles.get('openai')
+  adapter.providerInfo = (provider) => ({ id: provider, name: provider })
+  adapter.providerRetryPolicy = () => undefined
+  adapter.listModels = async () => [{ provider: 'openai', id: 'gpt-5', name: 'GPT 5', inputModalities: ['text'] }]
+  adapter.resolveModel = async function (provider, model) {
+    const descriptor = this.modelOf(snapshot, provider, model)
+    return {
+      provider,
+      id: model,
+      name: model,
+      inputModalities: ['text'],
+      context: { contextWindow: descriptor.contextWindow },
+    }
+  }
+  adapter.stream = async function* (options) {
+    const descriptor = this.modelOf(snapshot, options.provider, options.model)
+    dispatched.push(descriptor.contextWindow)
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+
+  const root = new Context()
+  const runtime = new LlmRuntime(root)
+  runtime.registerAdapter(['openai'], adapter)
+  const restoreRuntime = patchLlmRuntime(runtime, () => liveConfig)
+
+  const prepared = await runtime.prepareCall({ provider: 'openai', model: 'gpt-5' })
+  assert.equal(prepared.context.contextWindow, 262144)
+
+  liveConfig = {
+    providers: { openai: { models: { 'gpt-5': { contextWindow: 1000000 } } } },
+  }
+  // Live decorate now reports the override...
+  assert.equal(decorateModel(baseModel, liveConfig, { provider: 'openai', model: 'gpt-5', routeFallback: 262144 }).contextWindow, 1000000)
+  // ...but the prepared stream must still use the capacity captured at prepare.
+  for await (const _chunk of prepared.stream({ provider: 'openai', model: 'gpt-5', messages: [] })) {}
+  assert.deepEqual(dispatched, [262144])
+
+  restoreRuntime()
+  restore()
+})

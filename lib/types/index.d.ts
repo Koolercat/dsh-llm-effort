@@ -46,6 +46,7 @@ export declare function routeModelFacts(adapter: object, provider: string): Arra
   contextWindow?: number
   maxTokens?: number
 }>
+export declare function probeCredentials(request: { baseURL?: string; apiKey?: string }, configuredBaseUrl?: string, storedKey?: string): { baseUrl?: string; apiKey?: string }
 export declare function createProbeDiscovery(
   getAdapter: (provider: string) => object | undefined,
   options?: { getConfig?: () => unknown; fetchImpl?: typeof fetch },

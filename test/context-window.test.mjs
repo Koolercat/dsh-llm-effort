@@ -13,7 +13,7 @@ import {
   usableCapacity,
   validateContextConfig,
 } from '../lib/context.js'
-import { createProbeDiscovery, decorateModel } from '../lib/index.js'
+import { createProbeDiscovery, decorateModel, probeCredentials, patchPiAiAdapter, patchLlmRuntime } from '../lib/index.js'
 
 const OPENAI_OVERFLOW = JSON.stringify({
   error: {
@@ -40,6 +40,8 @@ test('refusal text yields the window, not the output cap it also names', () => {
     { contextWindow: 1048576 },
   )
   assert.deepEqual(extractCapacityLimits('Input validation error: inputs tokens + max_new_tokens must be <= 32768'), { contextWindow: 32768 })
+  // An output-cap "must be <=" must never also become a context window.
+  assert.deepEqual(extractCapacityLimits('max_tokens must be <= 32768'), { maxTokens: 32768 })
   assert.deepEqual(extractCapacityLimits('internal server error'), {})
   assert.deepEqual(extractCapacityLimits(undefined), {})
 })
@@ -47,7 +49,6 @@ test('refusal text yields the window, not the output cap it also names', () => {
 test('listing rows are read across the spellings deployments actually use', () => {
   assert.deepEqual(readListingCapacities({ max_model_len: 262144 }), { contextWindow: 262144 })
   assert.deepEqual(readListingCapacities({ inputTokenLimit: 1048576, outputTokenLimit: 65536 }), {
-    contextWindow: 1048576,
     maxTokens: 65536,
   })
   // A loaded local runtime refuses the architecture maximum, so the loaded
@@ -78,12 +79,12 @@ test('capacities outside the accepted range are refused rather than clamped', ()
 test('a plugin default may only claim a model still sized by the route fallback', () => {
   // The declared value equals the route fallback, so it is indistinguishable
   // from a guess and the opt-in default replaces it.
-  assert.deepEqual(resolveContextWindow({ resolved: 262144, routeFallback: 262144, pluginDefault: 272000 }), {
-    contextWindow: 272000,
+  assert.deepEqual(resolveContextWindow({ resolved: 262144, routeFallback: 262144, pluginDefault: 400000 }), {
+    contextWindow: 400000,
     source: 'plugin-default',
   })
   // A catalog-sized model is left alone.
-  assert.deepEqual(resolveContextWindow({ resolved: 400000, routeFallback: 262144, pluginDefault: 272000 }), {
+  assert.deepEqual(resolveContextWindow({ resolved: 400000, routeFallback: 262144, pluginDefault: 400000 }), {
     contextWindow: 400000,
     source: 'declared',
   })
@@ -93,7 +94,7 @@ test('a plugin default may only claim a model still sized by the route fallback'
     source: 'route-fallback',
   })
   // An explicit override always wins, including over the default.
-  assert.deepEqual(resolveContextWindow({ resolved: 262144, routeFallback: 262144, override: 1000000, pluginDefault: 272000 }), {
+  assert.deepEqual(resolveContextWindow({ resolved: 262144, routeFallback: 262144, override: 1000000, pluginDefault: 400000 }), {
     contextWindow: 1000000,
     source: 'override',
   })
@@ -192,13 +193,13 @@ const ROUTE = [{ id: 'm1', api: 'openai-completions', baseUrl: 'https://gw.examp
 
 test('the resolved directive reports provenance without touching the network', async () => {
   const discover = createProbeDiscovery(() => fakeAdapter(ROUTE), {
-    getConfig: () => ({ defaultContextWindow: 272000 }),
+    getConfig: () => ({ defaultContextWindow: 400000 }),
     fetchImpl: () => {
       throw new Error('the resolved directive must not reach the network')
     },
   })
   assert.deepEqual(await discover({ provider: 'acme' }), [
-    { id: 'm1', name: 'plugin-default', contextWindow: 272000, maxTokens: 32768 },
+    { id: 'm1', name: 'plugin-default', contextWindow: 400000, maxTokens: 32768 },
   ])
   const plain = createProbeDiscovery(() => fakeAdapter(ROUTE), { getConfig: () => ({}) })
   assert.deepEqual(await plain({ provider: 'acme', api: 'resolved' }), [

@@ -48,13 +48,13 @@ test('a capacity write is a plain override: clearing unsets', () => {
 })
 
 test('capacities are read out of settings and out of typed input', () => {
-  const value = { defaultContextWindow: 272000, providers: { openai: { models: { 'gpt-5': { contextWindow: 1000000 } } } } }
+  const value = { defaultContextWindow: 400000, providers: { openai: { models: { 'gpt-5': { contextWindow: 1000000 } } } } }
   assert.equal(api.contextWindowFor(value, 'openai', 'gpt-5'), 1000000)
   assert.equal(api.contextWindowFor(value, 'openai', 'absent'), undefined)
   assert.equal(api.contextWindowFor({}, 'openai', 'gpt-5'), undefined)
-  assert.equal(api.defaultContextWindowFor(value), 272000)
+  assert.equal(api.defaultContextWindowFor(value), 400000)
   assert.equal(api.defaultContextWindowFor({}), undefined)
-  assert.equal(api.parseWindowInput('272000'), 272000)
+  assert.equal(api.parseWindowInput('400000'), 400000)
   assert.equal(api.parseWindowInput('1M'), 1000000)
   assert.equal(api.parseWindowInput('128k'), 128000)
   assert.equal(api.parseWindowInput('1,048,576'), 1048576)
@@ -64,7 +64,7 @@ test('capacities are read out of settings and out of typed input', () => {
 })
 
 test('a rendered capacity never implies a rounder number than the real one', () => {
-  assert.equal(api.formatWindow(272000), '272K')
+  assert.equal(api.formatWindow(400000), '400K')
   assert.equal(api.formatWindow(1000000), '1M')
   assert.equal(api.formatWindow(1048576), '1.05M')
   assert.equal(api.formatWindow(262144), '262.1K')

@@ -23,7 +23,7 @@
 3. **按模型设置上下文窗口，并且可以探测真实值**
 
    同一个"修改"面板里可以为单个模型覆盖上下文窗口（预设 128K–2M，或手填
-   `272000` / `1M` 这样的值），另有一个全局项用于替换 pi-ai 对"完全不认识的
+   `400000` / `1M` 这样的值），另有一个全局项用于替换 pi-ai 对"完全不认识的
    模型"的兜底假设。旁边的两个按钮会去问端点它自己的真实窗口是多少。
 
 ## 关于上下文窗口
@@ -63,8 +63,9 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
 "解析值恰好等于该 route 兜底值"的模型，并且**不设就完全不改动任何窗口**。真实窗口
 正好等于兜底值的模型请逐个覆盖。
 
-顺带一提 272000 的来历：gpt-5 是 400000 总窗口 − 128000 最大输出 = 272000 输入
-预算，Codex 口径的 "272k" 就是这么来的（十进制，不是 272×1024）。
+推荐默认值是 **400000**（GPT-5 的总窗口）。常被提起的 272k = 400000 − 128000
+是输入预算，**不是** `contextWindow`——rc.7 的 `contextWindow` 是输入+输出的总容量，
+写成 272000 会让 compaction、占用率和溢出判断全部偏小。
 
 ### 探测：让端点自己说
 
@@ -72,8 +73,9 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
 
 - **探测目录**（免费，一次 GET）：读 `{baseURL}/models`，识别
   `context_length` / `context_window` / `max_model_len`（vLLM）/
-  `max_context_length`、`loaded_context_length`（LM Studio）/ `inputTokenLimit`
-  （Google）/ `limit.context` / `top_provider.context_length` 等写法。base 以
+  `max_context_length`、`loaded_context_length`（LM Studio）/ `limit.context` /
+  `top_provider.context_length` 等写法（`inputTokenLimit` 是输入预算，不写入
+  `contextWindow`）。base 以
   `/v1` 结尾时还会顺带问一次 LM Studio 的 `/api/v0/models`。
 - **探测报错**（近乎免费，一次被拒绝的 POST）：发一条 4 token 的消息，配上
   `max_tokens: 999999999`。端点在**生成之前**就会拒绝，而拒绝信息里通常直接带真实
@@ -152,7 +154,7 @@ dsh web
 ```yaml
 llm-effort:
   # 可选：仍在使用 pi-ai 兜底值的模型改用这个容量。不写则不改动任何窗口。
-  defaultContextWindow: 272000
+  defaultContextWindow: 400000
   providers:
     openai:
       models:
@@ -185,7 +187,7 @@ llm-effort:
 ## 测试
 
 ```bash
-npm ci && npm test                 # 回归测试（当前 49 个）
+npm ci && npm test                 # 回归测试（当前 53 个）
 npm run test:install               # 真实 dsh web 安装/启动/RPC 测试（随机端口 + 实例身份校验）
 npm run test:browser               # 用系统 Chrome/Chromium 打开 Effort 设置页并挂载模型行
 ```

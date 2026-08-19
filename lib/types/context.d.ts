@@ -51,7 +51,7 @@ export interface ProbeOptions {
   timeoutMs?: number
 }
 
-export declare const RECOMMENDED_CONTEXT_WINDOW = 272000
+export declare const RECOMMENDED_CONTEXT_WINDOW = 400000
 export declare const PI_AI_FALLBACK_CONTEXT_WINDOW = 262144
 export declare const MAX_CONTEXT_WINDOW = 16777216
 export declare const MIN_PROBED_CONTEXT_WINDOW = 256
@@ -60,6 +60,8 @@ export declare const PROBE_DIRECTIVE_RESOLVED = 'resolved'
 export declare const PROBE_DIRECTIVE_LISTING = 'listing'
 export declare const PROBE_DIRECTIVE_PREFIX = 'probe:'
 export declare const PROBE_MAX_TOKENS = 999999999
+export declare const MAX_PROBE_ERROR_BYTES = 65536
+export declare const MAX_PROBE_LISTING_BYTES: number
 export declare const PROBEABLE_PROTOCOLS: readonly string[]
 
 export declare function usableCapacity(value: unknown, bounds?: { max?: number; min?: number }): number | undefined
@@ -87,6 +89,7 @@ export declare function probeByRefusal(target: ProbeTarget, options?: ProbeOptio
   outcome: ProbeOutcome
   message?: string
 } & ProbedCapacities>
+export declare function isAbortError(error: unknown): boolean
 export declare function parseProbeDirective(api: unknown): ProbeDirective
 export declare function probeRow(id: string, outcome: string, capacities?: ProbedCapacities): {
   id: string
