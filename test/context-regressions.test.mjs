@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
-import { probeByRefusal, probeListing } from '../lib/context.js'
+import { listingCandidates, listingHeaders, probeByRefusal, probeListing } from '../lib/context.js'
 import {
   createProbeDiscovery,
   decorateModel,
@@ -271,4 +271,64 @@ test('a non-streaming body read still reports cancellation as aborted', async ()
   }
   const result = await probeListing({ baseUrl: 'https://x/v1', fetchImpl, signal: controller.signal })
   assert.equal(result.outcome, 'aborted')
+})
+
+
+test('an anthropic route probes /v1/models with x-api-key, not /models with bearer', async () => {
+  // Regression: a base URL like ".../anthropic" has no version segment, so the
+  // OpenAI-shaped guess "{base}/models" is a guaranteed 404 and a bearer token
+  // is a guaranteed 401. Both were observed against a real gateway.
+  assert.deepEqual(listingCandidates('https://gw.example/anthropic', 'anthropic-messages'), [
+    'https://gw.example/anthropic/v1/models',
+    'https://gw.example/anthropic/models',
+  ])
+  assert.deepEqual(listingHeaders('anthropic-messages', 'SECRET'), {
+    'anthropic-version': '2023-06-01',
+    'x-api-key': 'SECRET',
+  })
+  // The key is never also sprayed as a bearer token.
+  assert.equal(listingHeaders('anthropic-messages', 'SECRET').authorization, undefined)
+  assert.deepEqual(listingHeaders('openai-completions', 'SECRET'), { authorization: 'Bearer SECRET' })
+
+  const seen = []
+  const fetchImpl = async (url, init) => {
+    seen.push({ url, key: init.headers['x-api-key'] ?? null, bearer: init.headers.authorization ?? null })
+    return new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5', context_length: 1000000 }] }), { status: 200 })
+  }
+  const result = await probeListing({
+    baseUrl: 'https://gw.example/anthropic',
+    api: 'anthropic-messages',
+    apiKey: 'SECRET',
+    fetchImpl,
+  })
+  assert.equal(result.outcome, 'listing')
+  assert.deepEqual(result.models, [{ id: 'claude-sonnet-5', contextWindow: 1000000 }])
+  assert.deepEqual(seen, [{ url: 'https://gw.example/anthropic/v1/models', key: 'SECRET', bearer: null }])
+})
+
+test('an unversioned OpenAI base also tries the /v1 spelling', async () => {
+  assert.deepEqual(listingCandidates('http://localhost:1234', 'openai-completions'), [
+    'http://localhost:1234/models',
+    'http://localhost:1234/v1/models',
+  ])
+  // LM Studio's richer sibling is only asked on a versioned OpenAI-shaped base.
+  assert.deepEqual(listingCandidates('http://localhost:1234/v1', 'openai-completions'), [
+    'http://localhost:1234/v1/models',
+    'http://localhost:1234/api/v0/models',
+  ])
+  assert.deepEqual(listingCandidates('https://api.anthropic.com/v1', 'anthropic-messages'), [
+    'https://api.anthropic.com/v1/models',
+  ])
+
+  const seen = []
+  const fetchImpl = async (url) => {
+    seen.push(url)
+    if (url.endsWith('/v1/models')) {
+      return new Response(JSON.stringify({ data: [{ id: 'm1', context_length: 8192 }] }), { status: 200 })
+    }
+    return new Response('path not found', { status: 404 })
+  }
+  const result = await probeListing({ baseUrl: 'http://localhost:1234', api: 'openai-completions', fetchImpl })
+  assert.deepEqual(result.models, [{ id: 'm1', contextWindow: 8192 }])
+  assert.deepEqual(seen, ['http://localhost:1234/models', 'http://localhost:1234/v1/models'])
 })

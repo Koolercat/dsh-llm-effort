@@ -81,7 +81,8 @@ export declare function readListingCapacities(entry: unknown): ProbedCapacities
 export declare function readListingRows(body: unknown): Array<{ id: string } & ProbedCapacities>
 export declare function extractCapacityLimits(text: unknown): ProbedCapacities
 export declare function joinUrl(baseUrl: string, path: string): string
-export declare function listingCandidates(baseUrl: string): string[]
+export declare function listingCandidates(baseUrl: string, api?: string): string[]
+export declare function listingHeaders(api: string | undefined, apiKey: string | undefined): Record<string, string>
 export declare function probeRequestFor(target: ProbeTarget): { url: string; headers: Record<string, string>; body: unknown } | undefined
 export declare function probeListing(options: ProbeTarget & ProbeOptions & { baseUrl?: string }): Promise<{
   outcome: ProbeOutcome

@@ -76,7 +76,9 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
   `max_context_length`、`loaded_context_length`（LM Studio）/ `limit.context` /
   `top_provider.context_length` 等写法（`inputTokenLimit` 是输入预算，不写入
   `contextWindow`）。base 以
-  `/v1` 结尾时还会顺带问一次 LM Studio 的 `/api/v0/models`。
+  `/v1` 结尾时还会顺带问一次 LM Studio 的 `/api/v0/models`。路径与认证按路由协议
+  选择：`anthropic-messages` 用 `/v1/models` + `x-api-key` + `anthropic-version`，
+  OpenAI 系用 `/models` + `Bearer`；base 未带版本段时两种拼法都会试。
 - **探测报错**（近乎免费，一次被拒绝的 POST）：发一条 4 token 的消息，配上
   `max_tokens: 999999999`。多数端点会在**生成之前**拒绝，拒绝信息里通常直接带真实数字；
   但有些端点会接受或自动截断请求，此时仍可能产生请求费或少量输出：
@@ -190,7 +192,7 @@ llm-effort:
 ## 测试
 
 ```bash
-npm ci && npm test                 # 回归测试（当前 58 个）
+npm ci && npm test                 # 回归测试（当前 60 个）
 npm run test:install               # 真实 dsh web 安装/启动/RPC 测试（随机端口 + 实例身份校验）
 npm run test:browser               # 用系统 Chrome/Chromium 打开 Effort 设置页并挂载模型行
 ```
