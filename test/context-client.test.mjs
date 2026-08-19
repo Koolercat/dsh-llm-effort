@@ -140,6 +140,11 @@ test('a connection reset drops every cached read', async () => {
   const store = new api.ContextProbeStore(fakeApi(() => ({ result: { ok: true, value: { models: [{ id: 'm1', name: 'listing', contextWindow: 4096 }] } } })))
   await store.probeListing('acme')
   assert.equal(store.getSnapshot().listings.acme.rows.m1.contextWindow, 4096)
+  const before = store.getSnapshot().epoch ?? 0
   store.reset()
-  assert.deepEqual(json(store.getSnapshot()), { resolved: {}, listings: {}, probes: {} })
+  // The epoch bump is what makes consumers reload after an invalidation that
+  // leaves the provider ids unchanged.
+  assert.deepEqual(json(store.getSnapshot()), { resolved: {}, listings: {}, probes: {}, epoch: before + 1 })
+  store.reset()
+  assert.equal(store.getSnapshot().epoch, before + 2)
 })

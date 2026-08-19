@@ -57,6 +57,7 @@ export declare const RECOMMENDED_CONTEXT_WINDOW = 400000
 export declare const PI_AI_FALLBACK_CONTEXT_WINDOW = 262144
 export declare const MAX_CONTEXT_WINDOW = 16777216
 export declare const MIN_PROBED_CONTEXT_WINDOW = 256
+export declare const MIN_PROBED_MAX_TOKENS = 1
 export declare const PROBE_NS = 'llm-effort'
 export declare const PROBE_DIRECTIVE_RESOLVED = 'resolved'
 export declare const PROBE_DIRECTIVE_LISTING = 'listing'

@@ -87,7 +87,9 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
   ```
 
   解析器会把"输出上限"和"上下文窗口"分开（`supports at most 128000 completion
-  tokens` 说的是前者，误读会把窗口低估一个数量级）。支持
+  tokens` 说的是前者，误读会把窗口低估一个数量级）；两者同时出现时都会保留。
+  TGI 的 `inputs tokens + max_new_tokens must be <= N` 里 N 是 max-total-tokens，
+  按**窗口**读，而裸 `max_new_tokens must be <= N` 才是输出上限。支持
   `openai-completions` / `openai-responses` / `anthropic-messages`。若端点反而
   接受了这个无穷输出上限，客户端会**立即 abort**并报告"未能判定"；这不保证服务端已停止，
   也不保证未产生费用。
@@ -188,7 +190,7 @@ llm-effort:
 ## 测试
 
 ```bash
-npm ci && npm test                 # 回归测试（当前 56 个）
+npm ci && npm test                 # 回归测试（当前 58 个）
 npm run test:install               # 真实 dsh web 安装/启动/RPC 测试（随机端口 + 实例身份校验）
 npm run test:browser               # 用系统 Chrome/Chromium 打开 Effort 设置页并挂载模型行
 ```

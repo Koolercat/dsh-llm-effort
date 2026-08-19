@@ -238,3 +238,37 @@ test('interleaved prepared streams keep their own capacity snapshots', async () 
 
   restoreRuntime(); restore()
 })
+
+
+test('a listing that discloses only an output cap is evidence, not undisclosed', async () => {
+  const discover = createProbeDiscovery(() => ({
+    current: () => ({ models: { getModels: () => [{ id: 'm1', api: 'openai-completions', baseUrl: 'https://x/v1', contextWindow: 262144, maxTokens: 4096 }] } }),
+    config: { profiles: () => new Map([['acme', {}]]), resolveApiKey: async () => undefined },
+  }), {
+    getConfig: () => ({}),
+    fetchImpl: async () => new Response(JSON.stringify({ data: [{ id: 'm1', max_output_tokens: 65536 }] }), { status: 200 }),
+  })
+  const rows = await discover({ provider: 'acme', api: 'listing' })
+  assert.equal(rows[0].maxTokens, 65536)
+  assert.equal(rows[0].name, 'listing')
+})
+
+test('a non-streaming body read still reports cancellation as aborted', async () => {
+  const controller = new AbortController()
+  const fetchImpl = async () => {
+    controller.abort()
+    // No .body reader: forces the response.text() path.
+    return {
+      ok: true,
+      status: 200,
+      body: null,
+      text: async () => {
+        const error = new Error('The operation was aborted')
+        error.name = 'AbortError'
+        throw error
+      },
+    }
+  }
+  const result = await probeListing({ baseUrl: 'https://x/v1', fetchImpl, signal: controller.signal })
+  assert.equal(result.outcome, 'aborted')
+})

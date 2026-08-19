@@ -39,11 +39,18 @@ test('refusal text yields the window, not the output cap it also names', () => {
     extractCapacityLimits('The input token count (1234567) exceeds the maximum number of tokens allowed (1048576).'),
     { contextWindow: 1048576 },
   )
-  // TGI names max_new_tokens — an output / new-token cap, not a window.
-  assert.deepEqual(extractCapacityLimits('Input validation error: inputs tokens + max_new_tokens must be <= 32768'), { maxTokens: 32768 })
+  // TGI's "inputs + max_new_tokens" names max-total-tokens: the WINDOW.
+  assert.deepEqual(extractCapacityLimits('Input validation error: inputs tokens + max_new_tokens must be <= 32768'), { contextWindow: 32768 })
+  assert.deepEqual(
+    extractCapacityLimits('Input validation error: `inputs` tokens + `max_new_tokens` must be <= 32768'),
+    { contextWindow: 32768 },
+  )
   // An output-cap "must be <=" must never also become a context window.
   assert.deepEqual(extractCapacityLimits('max_tokens must be <= 32768'), { maxTokens: 32768 })
+  // A BARE max_new_tokens is still an output cap.
   assert.deepEqual(extractCapacityLimits('max_new_tokens must be <= 8192'), { maxTokens: 8192 })
+  // Output caps may be far below the 256-token window floor.
+  assert.deepEqual(extractCapacityLimits('max_tokens must be <= 128'), { maxTokens: 128 })
   // A refusal that carries BOTH an explicit window and an output cap keeps both.
   assert.deepEqual(
     extractCapacityLimits("This model's maximum context length is 131072 tokens. max_tokens is too large: 999. This model supports at most 128000 completion tokens."),
