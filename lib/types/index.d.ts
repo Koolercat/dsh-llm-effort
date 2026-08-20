@@ -7,27 +7,55 @@ export type * from './context.js'
 export declare const name = 'llm-effort'
 export declare const SETTINGS_NS: SettingsNamespace
 export declare const EFFORT_LEVELS: readonly ['low', 'medium', 'high', 'xhigh', 'max']
+export declare const PLUGIN_DEFAULT_EFFORT: 'max'
 export declare const Config: z<{
   defaultContextWindow?: number;
   providers?: Record<string, {
+    forceAdaptiveThinking?: boolean;
     models?: Record<string, {
       disabledEfforts?: Array<'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
       contextWindow?: number;
+      forceAdaptiveThinking?: boolean;
     }>;
   }>;
 }>
 export declare const DEFAULT_CONFIG: Readonly<{ providers: Record<string, never> }>
 export declare function disabledEffortsFor(config: unknown, provider: string, model: string): Set<string>
+export declare function forceAdaptiveThinkingFor(config: unknown, provider: string, model: string): boolean
+export declare function shouldApplyPluginDefaultEffort(
+  config: unknown,
+  provider: string,
+  model: string,
+  originallyReasoning?: boolean,
+  originallyApi?: string,
+): boolean
 export declare function validateEffortConfig(config: unknown): void
 export declare function nearestEnabledEffort(
   disabled: Iterable<string> | Set<string>,
   desired?: string,
 ): string | undefined
-export declare function decorateModel<T extends { provider: string; id: string; contextWindow?: number; thinkingLevelMap?: Record<string, string | null> }>(
+export declare function decorateModel<T extends { provider: string; id: string; contextWindow?: number; thinkingLevelMap?: Record<string, string | null>; compat?: Record<string, unknown> }>(
   model: T,
   config: unknown,
   options?: { provider?: string; model?: string; routeFallback?: number },
-): T & { reasoning: true; thinkingLevelMap: Record<string, string | null>; contextWindow?: number }
+): T & {
+  reasoning: true
+  thinkingLevelMap: Record<string, string | null>
+  contextWindow?: number
+  compat?: Record<string, unknown>
+}
+export declare function isGrokFamily(model: { id?: string; provider?: string; baseUrl?: string }): boolean
+export declare function decorateDispatchCompat(
+  model: {
+    api?: string
+    id?: string
+    provider?: string
+    baseUrl?: string
+    compat?: Record<string, unknown>
+  },
+  config?: unknown,
+  options?: { provider?: string; model?: string },
+): Record<string, unknown> | undefined
 export declare function migrateReasoningEffort(config: unknown, provider: string, model: string, desired?: string): string | undefined
 export declare function migrateDefaultEffort(config: unknown, provider: string, model: string, desiredDefault?: string): string | undefined
 export declare function applyReasoningPolicy(
@@ -36,6 +64,7 @@ export declare function applyReasoningPolicy(
   provider: string,
   model: string,
   desiredDefault?: string,
+  options?: { originallyReasoning?: boolean; originallyApi?: string },
 ): { efforts: Array<{ id: string }>; defaultEffort?: string }
 export declare function piAiAdapterFor(llm: unknown, provider: string): object | undefined
 export declare function routeFallbackWindow(adapter: object, provider: string): number | undefined

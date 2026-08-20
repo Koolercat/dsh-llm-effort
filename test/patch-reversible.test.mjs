@@ -26,6 +26,88 @@ test('P2: PiAiAdapter prototype patch is reversible and refuses duplicate mounts
   assert.equal(proto.resolveModel, originalResolveModel)
 })
 
+function stubPiAdapter({ provider, model, api, reasoning }) {
+  const profile = {
+    reasoning: undefined,
+    configuredMaxTokens: new Map(),
+  }
+  const adapter = Object.create(PiAiAdapter.prototype)
+  adapter.config = {
+    profiles: () => new Map([[provider, profile]]),
+  }
+  let currentCalls = 0
+  adapter.current = function current() {
+    currentCalls += 1
+    const originalReasoning = typeof reasoning === 'function' ? reasoning(currentCalls) : reasoning
+    return {
+      profiles: new Map([[provider, profile]]),
+      models: {
+        getModel() {
+          return {
+            provider,
+            id: model,
+            name: model,
+            api,
+            reasoning: originalReasoning,
+            input: ['text'],
+            contextWindow: 128000,
+            maxTokens: 4096,
+          }
+        },
+      },
+    }
+  }
+  return { adapter, currentCalls: () => currentCalls }
+}
+
+test('P2: whitelist default max is anthropic-messages only', async () => {
+  const restore = patchPiAiAdapter(() => ({
+    providers: { cloudflare: { forceAdaptiveThinking: true } },
+  }))
+  try {
+    const gpt = stubPiAdapter({
+      provider: 'cloudflare',
+      model: 'gpt-4',
+      api: 'openai-completions',
+      reasoning: false,
+    })
+    const gptInfo = await gpt.adapter.resolveModel('cloudflare', 'gpt-4')
+    assert.equal(gptInfo.reasoning.defaultEffort, undefined)
+
+    const grok = stubPiAdapter({
+      provider: 'cloudflare',
+      model: 'grok-4.6',
+      api: 'anthropic-messages',
+      reasoning: false,
+    })
+    const grokInfo = await grok.adapter.resolveModel('cloudflare', 'grok-4.6')
+    assert.equal(grokInfo.reasoning.defaultEffort, 'max')
+  } finally {
+    restore()
+  }
+})
+
+test('P2: original reasoning comes from the snapshot resolveModel uses', async () => {
+  const restore = patchPiAiAdapter(() => ({
+    providers: { cf: { forceAdaptiveThinking: true } },
+  }))
+  try {
+    const { adapter, currentCalls } = stubPiAdapter({
+      provider: 'cf',
+      model: 'gpt-4',
+      api: 'openai-completions',
+      // First current() is catalog reasoning:true; a later call would be false.
+      // An extra pre-read would pair the old true with the new descriptor.
+      reasoning: (n) => n === 1,
+    })
+    const info = await adapter.resolveModel('cf', 'gpt-4')
+    assert.equal(currentCalls(), 1, 'must not pre-read a different snapshot')
+    assert.equal(info.reasoning.defaultEffort, 'max')
+  } finally {
+    restore()
+  }
+})
+
 class FakeLlmRuntime extends LlmRuntime {
   constructor(ctx, calls) {
     super(ctx)

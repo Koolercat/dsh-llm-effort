@@ -113,8 +113,50 @@ PY
 
 # 2. Configure a dummy pi-ai route with one model and confirm the generic
 # five-effort menu reaches llm.models without any provider network call.
-MUTATE_JSON="$(rpc 'settings.mutate' '{"ns":"llm-pi-ai","ops":[{"op":"set","path":["providers","effort-smoke","api"],"value":"openai-completions"},{"op":"set","path":["providers","effort-smoke","baseURL"],"value":"https://example.invalid/v1"},{"op":"set","path":["providers","effort-smoke","models"],"value":[{"id":"smoke-model"}]},{"op":"set","path":["providers","effort-smoke","reasoning"],"value":"high"}]}')"
+# A hand-declared openai-completions model is catalog reasoning:false; the
+# plugin default max must not materialize for that protocol even after the
+# route is on the adaptive-thinking whitelist (whitelist default max is
+# anthropic-messages only).
+MUTATE_JSON="$(rpc 'settings.mutate' '{"ns":"llm-pi-ai","ops":[{"op":"set","path":["providers","effort-smoke","api"],"value":"openai-completions"},{"op":"set","path":["providers","effort-smoke","baseURL"],"value":"https://example.invalid/v1"},{"op":"set","path":["providers","effort-smoke","models"],"value":[{"id":"smoke-model"}]}]}')"
 python3 - "$MUTATE_JSON" <<'PY'
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload['result']['ok'] is True, payload
+PY
+
+MODELS_UNSET_JSON="$(rpc 'llm.models' '{}')"
+python3 - "$MODELS_UNSET_JSON" <<'PY'
+import json, sys
+payload = json.loads(sys.argv[1])
+groups = payload['result']['value']['groups']
+group = next(group for group in groups if group['id'] == 'effort-smoke')
+model = next(model for model in group['models'] if model['id'] == 'smoke-model')
+efforts = [effort['id'] for effort in model['reasoning']['efforts']]
+assert efforts == ['low', 'medium', 'high', 'xhigh', 'max'], efforts
+assert 'defaultEffort' not in model['reasoning'], model['reasoning']
+PY
+
+MUTATE_WHITELIST_JSON="$(rpc 'settings.mutate' '{"ns":"llm-effort","ops":[{"op":"set","path":["providers","effort-smoke","forceAdaptiveThinking"],"value":true}]}')"
+python3 - "$MUTATE_WHITELIST_JSON" <<'PY'
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload['result']['ok'] is True, payload
+PY
+
+MODELS_DEFAULT_JSON="$(rpc 'llm.models' '{}')"
+python3 - "$MODELS_DEFAULT_JSON" <<'PY'
+import json, sys
+payload = json.loads(sys.argv[1])
+groups = payload['result']['value']['groups']
+group = next(group for group in groups if group['id'] == 'effort-smoke')
+model = next(model for model in group['models'] if model['id'] == 'smoke-model')
+efforts = [effort['id'] for effort in model['reasoning']['efforts']]
+assert efforts == ['low', 'medium', 'high', 'xhigh', 'max'], efforts
+assert 'defaultEffort' not in model['reasoning'], model['reasoning']
+PY
+
+MUTATE_REASONING_JSON="$(rpc 'settings.mutate' '{"ns":"llm-pi-ai","ops":[{"op":"set","path":["providers","effort-smoke","reasoning"],"value":"high"}]}')"
+python3 - "$MUTATE_REASONING_JSON" <<'PY'
 import json, sys
 payload = json.loads(sys.argv[1])
 assert payload['result']['ok'] is True, payload

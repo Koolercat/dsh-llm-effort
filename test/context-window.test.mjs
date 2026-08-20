@@ -134,6 +134,7 @@ test('decorateModel carries the capacity both faces read', () => {
   // Effort decoration is untouched by the capacity policy.
   assert.equal(decorated.reasoning, true)
   assert.equal(decorated.thinkingLevelMap.max, 'max')
+  assert.equal(decorated.compat, undefined)
   const untouched = decorateModel(model, {}, { provider: 'acme', model: 'm1', routeFallback: 262144 })
   assert.equal(untouched.contextWindow, 262144)
 })

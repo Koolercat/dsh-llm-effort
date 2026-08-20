@@ -12,7 +12,13 @@
    low, medium, high, xhigh, max
    ```
 
-   官方 DeepSeek adapter（`llm-deepseek`）不受影响。
+   未选择时默认 **max**，但只作用于 catalog 本身会 reasoning 的模型，或设置里
+   白名单（`forceAdaptiveThinking`）且原始 `api` 为 `anthropic-messages` 的网关
+   模型。catalog 标明 `reasoning: false` 的条目（如 Claude 3 Haiku）未选手动档
+   时**不发送 thinking**；混合协议 route（例如 Cloudflare）上的
+   `openai-completions` 模型也不会因为 route 白名单而物化 max。在
+   `anthropic-messages` 网关上要把档位写成 `output_config.effort` 时，同样需
+   打开该白名单。官方 DeepSeek adapter（`llm-deepseek`）不受影响。
 
 2. **按模型取消 Effort**
 
@@ -102,7 +108,10 @@ UI 上每个模型都会显示当前生效值和它的**来源**：
 
 ## 取消规则与迁移策略
 
-- 模型的**当前默认 Effort** 不允许取消（UI 会禁用该复选框）。
+- 模型的**当前默认 Effort** 不允许取消（UI 会禁用该复选框）。未配置 route
+  `reasoning` 时，仅 catalog 会 reasoning 的模型，以及白名单上的
+  `anthropic-messages` 模型，插件默认档是 **max**（被取消则迁移到最近可用档）；
+  其余模型未选择时不物化默认档。
 - 每个模型**至少保留一个**可用 Effort，最后一个可用项不允许取消。
 - 如果手改 `settings.yaml` 或已有会话仍引用了被取消的 Effort，Host 会在
   `resolveCallConfig` / `prepareCall` / `stream` 前自动迁移到最近的可用档位：
@@ -167,6 +176,13 @@ llm-effort:
           disabledEfforts: [xhigh, max]
           # 可选：这一个模型的显式容量，永远优先于上面的默认值。
           contextWindow: 1000000
+    # anthropic-messages 网关要把 xhigh/max 写成 output_config.effort 时，
+    # 必须显式打开。不写则沿用 catalog / budget_tokens。
+    axon:
+      forceAdaptiveThinking: true
+      models:
+        grok-4.6:
+          contextWindow: 500000
 ```
 
 ## 实现说明
@@ -183,8 +199,19 @@ llm-effort:
   `settingsNs === 'llm-pi-ai'` 的路由生效，官方 DeepSeek 请求不会被改写。
 - 保留 pi-ai 目录中已有的 wire spelling（例如原 `max: ultra` 不会被改回
   `max`）。
+- 分派 compat **只补缺、不覆盖 catalog 已有布尔值**：
+  - `forceAdaptiveThinking` 必须在设置里**显式白名单**（route
+    `providers.<route>.forceAdaptiveThinking: true`，可被该模型条目覆盖）。
+    不会从 `reasoning: false` 推断「手写网关」——catalog 里的
+    `cloudflare-ai-gateway/claude-3-haiku` 等旧模型同样是 `reasoning: false`。
+  - `supportsReasoningEffort` 仅给 `openai-completions` 上的 Grok，且仅当
+    catalog 未声明。`kimi-k2.x` 等 catalog 写明 `false` 的条目保持 false，
+    避免发出模型不支持的 `reasoning_effort`。
 - 不展示 `off` / `minimal`：插件契约就是五档通用 Effort；但这二者作为合法
-  默认值或旧选择出现时会迁移到最低可用通用档，未选择 Effort 时仍由 provider 默认决定。
+  默认值或旧选择出现时会迁移到最低可用通用档。未选择 Effort 时，仅 catalog
+  已 reasoning 的模型，或白名单上的 `anthropic-messages` 网关，默认 **max**；
+  catalog `reasoning: false` 以及白名单 route 上的其它协议保持不发送 thinking。
+  route 配置了 `reasoning` 时仍用该档。
 - `@deepseek-ai/cordis` 和所有 `dsh-*` 运行时包均为 peerDependencies，
   `@deepseek-ai/schemastery` 是唯一 runtime dependency，避免 pnpm 安装出第二个
   PiAiAdapter / LlmRuntime 实例导致补丁落空。
@@ -192,7 +219,7 @@ llm-effort:
 ## 测试
 
 ```bash
-npm ci && npm test                 # 回归测试（当前 60 个）
+npm ci && npm test                 # 回归测试
 npm run test:install               # 真实 dsh web 安装/启动/RPC 测试（随机端口 + 实例身份校验）
 npm run test:browser               # 用系统 Chrome/Chromium 打开 Effort 设置页并挂载模型行
 ```
